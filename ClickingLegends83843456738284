@@ -1,0 +1,577 @@
+--// Advanced Auto Farmer v2.0 (FULLY LOADED)
+--// Features: Stealth, Webhook, Config, Serverhop, Rejoin, Data Logging, Formatting
+
+--// Services
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+
+--// Remotes
+local tapRemote = ReplicatedStorage:WaitForChild("TappingRemote"):WaitForChild("Tap")
+local rebirthRemote = ReplicatedStorage:WaitForChild("Rebirth")
+local upgradeRemote = ReplicatedStorage:WaitForChild("Upgrade")
+
+--// Player & Data
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local playerData = player:WaitForChild("Data")
+
+--// Config
+local config = {
+    webhookUrl = "",
+    autoTap = true,
+    autoRebirth = true,
+    rebirthAmount = 100,
+    autoUpgrade = true,
+    upgradeList = {
+        { name = "More Gems", enabled = true },
+        { name = "More Taps", enabled = true }
+    },
+    stealthMode = false,
+    guiVisible = true
+}
+
+--// Rebirth Options
+local rebirthOptions = {1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000, 250000}
+
+--// Utils
+local function formatNumber(num)
+    if num >= 1e12 then return string.format("%.2fT", num / 1e12)
+    elseif num >= 1e9 then return string.format("%.2fB", num / 1e9)
+    elseif num >= 1e6 then return string.format("%.1fM", num / 1e6)
+    elseif num >= 1e3 then return string.format("%.1fK", num / 1e3)
+    else return tostring(math.floor(num)) end
+end
+
+local function getPlayerData()
+    local data = {}
+    for _, v in pairs(playerData:GetChildren()) do
+        if v:IsA("IntValue") or v:IsA("NumberValue") then
+            data[v.Name] = formatNumber(v.Value)
+        end
+    end
+    return data
+end
+
+local function sendWebhook(title, description, fields)
+    if config.webhookUrl == "" then return end
+    local embed = {
+        title = title,
+        description = description,
+        color = 3447003,
+        fields = fields,
+        timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+    }
+    HttpService:PostAsync(config.webhookUrl, HttpService:JSONEncode({
+        embeds = {embed}
+    }))
+end
+
+local function saveConfig()
+    makefolder("AutoFarmer")
+    writefile("AutoFarmer/config.json", HttpService:JSONEncode(config))
+end
+
+local function loadConfig()
+    if isfolder("AutoFarmer") and isfile("AutoFarmer/config.json") then
+        config = HttpService:JSONDecode(readfile("AutoFarmer/config.json"))
+    end
+end
+
+--// Game Info
+local placeId = game.PlaceId
+local scriptName = "AutoFarmer_" .. placeId
+
+loadConfig()
+
+--// GUI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = HttpService:GenerateGUID(false)
+screenGui.ResetOnSpawn = false
+screenGui.DisplayOrder = 999
+screenGui.Parent = playerGui
+
+--// Main Frame
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.fromOffset(360, 480)
+mainFrame.Position = UDim2.fromOffset(50, 50)
+mainFrame.BackgroundColor3 = Color3.fromRGB(22, 22, 32)
+mainFrame.BorderSizePixel = 0
+mainFrame.ClipsDescendants = true
+mainFrame.Visible = config.guiVisible
+mainFrame.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 14)
+corner.Parent = mainFrame
+
+--// Shadow
+local shadow = Instance.new("ImageLabel")
+shadow.Size = UDim2.new(1, 20, 1, 20)
+shadow.Position = UDim2.fromOffset(-10, -10)
+shadow.BackgroundTransparency = 1
+shadow.Image = "rbxassetid://6014261993"
+shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+shadow.ImageTransparency = 0.7
+shadow.ZIndex = 0
+shadow.Parent = mainFrame
+
+--// Title Bar
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 44)
+titleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 14)
+titleCorner.Parent = titleBar
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, -120, 1, 0)
+titleLabel.Position = UDim2.fromOffset(16, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = scriptName
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextSize = 16
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = titleBar
+
+--// Buttons
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Size = UDim2.fromOffset(32, 32)
+minimizeBtn.Position = UDim2.new(1, -100, 0, 6)
+minimizeBtn.BackgroundTransparency = 1
+minimizeBtn.Text = "−"
+minimizeBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+minimizeBtn.Font = Enum.Font.GothamBold
+minimizeBtn.TextSize = 20
+minimizeBtn.Parent = titleBar
+
+local closeButton = Instance.new("TextButton")
+closeButton.Size = UDim2.fromOffset(32, 32)
+closeButton.Position = UDim2.new(1, -60, 0, 6)
+closeButton.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
+closeButton.Text = "×"
+closeButton.TextColor3 = Color3.new(1, 1, 1)
+closeButton.Font = Enum.Font.GothamBold
+closeButton.TextSize = 18
+closeButton.Parent = titleBar
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 8)
+closeCorner.Parent = closeButton
+
+--// Resize Handle
+local resizeHandle = Instance.new("ImageLabel")
+resizeHandle.Size = UDim2.fromOffset(20, 20)
+resizeHandle.Position = UDim2.new(1, -22, 1, -22)
+resizeHandle.BackgroundTransparency = 1
+resizeHandle.Image = "rbxassetid://7072706"
+resizeHandle.ImageColor3 = Color3.fromRGB(180, 180, 180)
+resizeHandle.Parent = mainFrame
+
+--// Content
+local contentFrame = Instance.new("Frame")
+contentFrame.Size = UDim2.new(1, -24, 1, -68)
+contentFrame.Position = UDim2.fromOffset(12, 56)
+contentFrame.BackgroundTransparency = 1
+contentFrame.Parent = mainFrame
+
+local scrollingFrame = Instance.new("ScrollingFrame")
+scrollingFrame.Size = UDim2.new(1, 0, 1, 0)
+scrollingFrame.BackgroundTransparency = 1
+scrollingFrame.ScrollBarThickness = 5
+scrollingFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 150, 255)
+scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+scrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scrollingFrame.Parent = contentFrame
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.Padding = UDim.new(0, 10)
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Parent = scrollingFrame
+
+--// Data Display
+local dataLabel = Instance.new("TextLabel")
+dataLabel.Size = UDim2.new(1, -20, 0, 80)
+dataLabel.Position = UDim2.fromOffset(10, 0)
+dataLabel.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+dataLabel.BorderSizePixel = 0
+dataLabel.Text = "Loading data..."
+dataLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+dataLabel.Font = Enum.Font.Gotham
+dataLabel.TextSize = 12
+dataLabel.TextWrapped = true
+dataLabel.TextYAlignment = Enum.TextYAlignment.Top
+dataLabel.Parent = scrollingFrame
+
+local dataCorner = Instance.new("UICorner")
+dataCorner.CornerRadius = UDim.new(0, 10)
+dataCorner.Parent = dataLabel
+
+--// Dragging & Resizing (unchanged, optimized)
+local dragging, dragStart, startPos = false, nil, nil
+titleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true; dragStart = input.Position; startPos = mainFrame.Position
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    elseif resizing and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - resizeStart
+        mainFrame.Size = UDim2.new(0, math.max(320, resizeStartSize.X.Offset + delta.X), 0, math.max(400, resizeStartSize.Y.Offset + delta.Y))
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false; resizing = false
+    end
+end)
+
+local resizing, resizeStart, resizeStartSize = false
+resizeHandle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        resizing = true; resizeStart = input.Position; resizeStartSize = mainFrame.Size
+    end
+end)
+
+--// Minimize
+local minimized = false
+minimizeBtn.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    minimizeBtn.Text = minimized and "+" or "−"
+    contentFrame.Visible = not minimized
+    mainFrame.Size = minimized and UDim2.fromOffset(360, 56) or UDim2.fromOffset(360, 480)
+end)
+
+--// Close & Save
+closeButton.MouseButton1Click:Connect(function()
+    saveConfig()
+    screenGui:Destroy()
+end)
+
+--// Toggle GUI
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.Insert then
+        config.guiVisible = not config.guiVisible
+        mainFrame.Visible = config.guiVisible
+        saveConfig()
+    end
+end)
+
+--// Toggle Function (FIXED STEALTH COLORS)
+local function createToggle(name, default, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 44)
+    frame.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+    frame.Parent = scrollingFrame
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = frame
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -70, 1, 0)
+    label.Position = UDim2.fromOffset(12, 0)
+    label.BackgroundTransparency = 1
+    label.Text = name
+    label.TextColor3 = Color3.fromRGB(230, 230, 230)
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 14
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+
+    local toggle = Instance.new("TextButton")
+    toggle.Size = UDim2.fromOffset(54, 28)
+    toggle.Position = UDim2.new(1, -66, 0.5, -14)
+    toggle.BackgroundColor3 = default and Color3.fromRGB(0, 170, 255) or Color3.fromRGB(60, 60, 70) -- FIXED: DARKER GRAY
+    toggle.Text = default and "ON" or "OFF"
+    toggle.TextColor3 = Color3.new(1, 1, 1)
+    toggle.Font = Enum.Font.GothamBold
+    toggle.TextSize = 12
+    toggle.Parent = frame
+
+    local tCorner = Instance.new("UICorner")
+    tCorner.CornerRadius = UDim.new(0, 14)
+    tCorner.Parent = toggle
+
+    toggle.MouseButton1Click:Connect(function()
+        default = not default
+        toggle.BackgroundColor3 = default and Color3.fromRGB(0, 170, 255) or Color3.fromRGB(60, 60, 70)
+        toggle.Text = default and "ON" or "OFF"
+        callback(default)
+        saveConfig()
+    end)
+
+    return frame
+end
+
+--// Scrollable Dropdown (unchanged)
+local function createDropdown(name, options, defaultIndex, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 44)
+    frame.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+    frame.Parent = scrollingFrame
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = frame
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.5, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = name
+    label.TextColor3 = Color3.fromRGB(230, 230, 230)
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 14
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Position = UDim2.fromOffset(12, 0)
+    label.Parent = frame
+
+    local selectedBtn = Instance.new("TextButton")
+    selectedBtn.Size = UDim2.new(0.45, 0, 0, 32)
+    selectedBtn.Position = UDim2.new(0.52, 0, 0.5, -16)
+    selectedBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+    selectedBtn.Text = tostring(options[defaultIndex])
+    selectedBtn.TextColor3 = Color3.new(1, 1, 1)
+    selectedBtn.Font = Enum.Font.Gotham
+    selectedBtn.TextSize = 13
+    selectedBtn.TextTruncate = Enum.TextTruncate.AtEnd
+    selectedBtn.Parent = frame
+
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 8)
+    btnCorner.Parent = selectedBtn
+
+    local arrow = Instance.new("TextLabel")
+    arrow.Size = UDim2.fromOffset(20, 20)
+    arrow.Position = UDim2.new(1, -25, 0.5, -10)
+    arrow.BackgroundTransparency = 1
+    arrow.Text = "▼"
+    arrow.TextColor3 = Color3.new(1, 1, 1)
+    arrow.Font = Enum.Font.GothamBold
+    arrow.Parent = selectedBtn
+
+    local open = false
+    local menu = nil
+
+    selectedBtn.MouseButton1Click:Connect(function()
+        if open then
+            if menu then menu:Destroy() end
+            open = false
+            return
+        end
+
+        open = true
+        menu = Instance.new("ScrollingFrame")
+        menu.Size = UDim2.new(0, 190, 0, 160)
+        menu.Position = UDim2.new(0, selectedBtn.AbsolutePosition.X - mainFrame.AbsolutePosition.X, 0, selectedBtn.AbsolutePosition.Y - mainFrame.AbsolutePosition.Y + 36)
+        menu.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+        menu.ScrollBarThickness = 4
+        menu.ScrollBarImageColor3 = Color3.fromRGB(100, 150, 255)
+        menu.CanvasSize = UDim2.new(0, 0, 0, #options * 32)
+        menu.ZIndex = 20
+        menu.Parent = mainFrame
+
+        local mCorner = Instance.new("UICorner")
+        mCorner.CornerRadius = UDim.new(0, 10)
+        mCorner.Parent = menu
+
+        local layout = Instance.new("UIListLayout")
+        layout.Padding = UDim.new(0, 2)
+        layout.Parent = menu
+
+        for i, opt in ipairs(options) do
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(1, -8, 0, 30)
+            btn.BackgroundColor3 = i == defaultIndex and Color3.fromRGB(0, 140, 255) or Color3.fromRGB(55, 55, 75)
+            btn.Text = tostring(opt)
+            btn.TextColor3 = Color3.new(1, 1, 1)
+            btn.Font = Enum.Font.Gotham
+            btn.TextSize = 13
+            btn.ZIndex = 21
+            btn.Parent = menu
+
+            local bCorner = Instance.new("UICorner")
+            bCorner.CornerRadius = UDim.new(0, 8)
+            bCorner.Parent = btn
+
+            btn.MouseButton1Click:Connect(function()
+                defaultIndex = i
+                selectedBtn.Text = tostring(opt)
+                callback(opt)
+                menu:Destroy()
+                open = false
+                saveConfig()
+            end)
+        end
+    end)
+
+    return frame
+end
+
+--// Buttons
+local function createButton(name, callback, color)
+    local frame = Instance.new("TextButton")
+    frame.Size = UDim2.new(1, -20, 0, 40)
+    frame.Position = UDim2.fromOffset(10, 0)
+    frame.BackgroundColor3 = color or Color3.fromRGB(0, 140, 40)
+    frame.Text = name
+    frame.TextColor3 = Color3.new(1, 1, 1)
+    frame.Font = Enum.Font.GothamBold
+    frame.TextSize = 14
+    frame.Parent = scrollingFrame
+
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 10)
+    btnCorner.Parent = frame
+
+    frame.MouseButton1Click:Connect(callback)
+    return frame
+end
+
+--// Build GUI
+createToggle("Auto Tap", config.autoTap, function(v) config.autoTap = v end)
+createToggle("Auto Rebirth", config.autoRebirth, function(v) config.autoRebirth = v end)
+createDropdown("Rebirth Amount", rebirthOptions, 6, function(v) config.rebirthAmount = v end)
+createToggle("Auto Upgrade", config.autoUpgrade, function(v) config.autoUpgrade = v end)
+
+--// Webhook Input
+local webhookFrame = Instance.new("Frame")
+webhookFrame.Size = UDim2.new(1, 0, 0, 44)
+webhookFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+webhookFrame.Parent = scrollingFrame
+
+local webhookCorner = Instance.new("UICorner")
+webhookCorner.CornerRadius = UDim.new(0, 10)
+webhookCorner.Parent = webhookFrame
+
+local webhookLabel = Instance.new("TextLabel")
+webhookLabel.Size = UDim2.new(0.4, 0, 1, 0)
+webhookLabel.BackgroundTransparency = 1
+webhookLabel.Text = "Discord Webhook"
+webhookLabel.TextColor3 = Color3.fromRGB(230, 230, 230)
+webhookLabel.Font = Enum.Font.Gotham
+webhookLabel.TextSize = 14
+webhookLabel.TextXAlignment = Enum.TextXAlignment.Left
+webhookLabel.Position = UDim2.fromOffset(12, 0)
+webhookLabel.Parent = webhookFrame
+
+local webhookBtn = Instance.new("TextButton")
+webhookBtn.Size = UDim2.new(0.55, 0, 0, 32)
+webhookBtn.Position = UDim2.new(0.42, 0, 0.5, -16)
+webhookBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+webhookBtn.Text = config.webhookUrl ~= "" and "✅ SET" or "PASTE URL"
+webhookBtn.TextColor3 = config.webhookUrl ~= "" and Color3.fromRGB(0, 255, 0) or Color3.new(1, 1, 1)
+webhookBtn.Font = Enum.Font.GothamBold
+webhookBtn.TextSize = 12
+webhookBtn.Parent = webhookFrame
+
+local wCorner = Instance.new("UICorner")
+wCorner.CornerRadius = UDim.new(0, 8)
+wCorner.Parent = webhookBtn
+
+webhookBtn.MouseButton1Click:Connect(function()
+    -- Simple webhook input (paste via executor console or modify)
+    config.webhookUrl = "YOUR_WEBHOOK_HERE" -- Replace or use setclipboard
+    webhookBtn.Text = "✅ SET"
+    webhookBtn.TextColor3 = Color3.fromRGB(0, 255, 0)
+    saveConfig()
+end)
+
+createToggle("Stealth Mode", config.stealthMode, function(v)
+    config.stealthMode = v
+    local trans = v and 0.85 or 0
+    mainFrame.BackgroundTransparency = trans
+    for _, child in ipairs(mainFrame:GetDescendants()) do
+        if child:IsA("Frame") or child:IsA("TextButton") then
+            child.BackgroundTransparency = trans
+        elseif child:IsA("TextLabel") then
+            child.TextTransparency = v and 0.6 or 0
+        end
+    end
+    saveConfig()
+end)
+
+--// Action Buttons
+createButton("📊 Log Data", function()
+    local data = getPlayerData()
+    local fields = {}
+    for k, v in pairs(data) do
+        table.insert(fields, {name = k, value = v, inline = true})
+    end
+    sendWebhook("AutoFarmer Data Log", "PlaceId: " .. placeId, fields)
+end, Color3.fromRGB(0, 140, 255))
+
+createButton("🔄 Rejoin", function()
+    game:GetService("TeleportService"):Teleport(game.PlaceId, player)
+end, Color3.fromRGB(255, 180, 0))
+
+createButton("➡️ ServerHop", function()
+    local servers = HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100"))
+    for _, v in pairs(servers.data) do
+        if v.playing < v.maxPlayers and v.id ~= game.JobId then
+            TeleportService:TeleportToPlaceInstance(placeId, v.id)
+            break
+        end
+    end
+end, Color3.fromRGB(0, 140, 40))
+
+--// Anti-Detection
+if getrawmetatable then
+    local mt = getrawmetatable(game)
+    local oldNamecall = mt.__namecall
+    setreadonly(mt, false)
+    mt.__namecall = newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        if not checkcaller() and method == "FindFirstChild" and self == playerGui and args[1] == screenGui.Name then
+            return nil
+        end
+        return oldNamecall(self, ...)
+    end)
+    setreadonly(mt, true)
+end
+
+--// Data Updater
+task.spawn(function()
+    while screenGui.Parent do
+        local data = getPlayerData()
+        local text = "📊 DATA:\n"
+        for k, v in pairs(data) do
+            text = text .. "  " .. k .. ": " .. v .. "\n"
+        end
+        dataLabel.Text = text
+        task.wait(1)
+    end
+end)
+
+--// Main Loop
+task.spawn(function()
+    while screenGui.Parent do
+        if config.autoTap then pcall(tapRemote.FireServer, tapRemote) end
+        if config.autoRebirth then pcall(rebirthRemote.FireServer, rebirthRemote, config.rebirthAmount) end
+        if config.autoUpgrade then
+            for _, upg in ipairs(config.upgradeList) do
+                if upg.enabled then pcall(upgradeRemote.InvokeServer, upgradeRemote, upg.name) end
+            end
+        end
+        task.wait(0.08)
+    end
+end)
+
+--// Startup Webhook
+sendWebhook("🚀 " .. scriptName .. " LOADED", "PlaceId: " .. placeId, {{name = "Status", value = "Online", inline = true}})
+
+print("✅ " .. scriptName .. " LOADED | INSERT = Toggle | Webhook Ready!")
